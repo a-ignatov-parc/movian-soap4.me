@@ -3,5 +3,6 @@
 .DS_Store
 
 # Build files
-node_modules/
 npm-debug.log
+node_modules/
+out/
