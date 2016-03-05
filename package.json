@@ -1,0 +1,24 @@
+{
+  "name": "movian-soap4.me",
+  "version": "1.0.0",
+  "description": "Movian media server plugin for soap4.me video service",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/a-ignatov-parc/movian-soap4.me.git"
+  },
+  "keywords": [
+    "movian",
+    "soap4.me",
+    "plugin"
+  ],
+  "author": "Anton Ignatov <abietis@gmail.com>",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/a-ignatov-parc/movian-soap4.me/issues"
+  },
+  "homepage": "https://github.com/a-ignatov-parc/movian-soap4.me#readme"
+}
