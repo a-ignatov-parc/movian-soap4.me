@@ -97,6 +97,7 @@ const handlers = {
 
 		page.metadata.title = i18n.SectionWatching;
 		page.metadata.logo = iconPath;
+		page.model.contents = 'grid';
 		page.contents = 'items';
 		page.type = 'directory';
 		page.loading = true;
@@ -119,9 +120,9 @@ const handlers = {
 			}) => {
 				page.appendItem(prefix('browse', sid), 'video', {
 					year,
+					title,
 					description,
 					rating: parseFloat(imdb_rating),
-					title: `${title} (${title_ru})`,
 					icon: `https://covers.soap4.me/soap/big/${sid}.jpg`,
 				});
 			});
