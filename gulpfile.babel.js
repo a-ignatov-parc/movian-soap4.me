@@ -1,44 +1,72 @@
 import gulp from 'gulp';
-import assign from 'lodash/extend';
-import source from 'vinyl-source-stream';
+import babel from 'gulp-babel';
+import rename from 'gulp-rename';
+import plumber from 'gulp-plumber';
 
-import config, {movian} from './package.json';
+import through from 'through2';
+import assign from 'lodash/extend';
 
 const ASSETS = './assets';
 const SOURCE = './src';
 const DEST = './out';
 
-const pluginFileName = 'index.js';
-
-const predefinedProps = {
-	file: pluginFileName
+const resources = {
+	plugin: 'index.js',
+	config: 'plugin.json',
+	module: './package.json',
+	source: `${SOURCE}/**/*.js`,
+	assets: `${ASSETS}/**/*.{png,jpg,gif}`,
 };
 
 gulp.task('plugin', () => {
 	return gulp
-		.src(`${SOURCE}/**/*.js`)
+		.src(resources.source)
+		.pipe(plumber())
+		.pipe(babel({
+			presets: ['es2015']
+		}))
+		.pipe(rename(resources.plugin))
 		.pipe(gulp.dest(DEST));
 });
 
 gulp.task('assets', () => {
 	return gulp
-		.src(`${ASSETS}/**/*.{png,jpg,gif}`)
+		.src(resources.assets)
+		.pipe(plumber())
 		.pipe(gulp.dest(DEST));
 });
 
 gulp.task('config', () => {
-	let stream = source('plugin.json');
-	let configProps = Object
-		.keys(movian)
-		.filter((name) => movian[name] === null)
-		.reduce((result, name) => {
-			result[name] = predefinedProps[name] || config[name];
-			return result;
-		}, {});
+	return gulp
+		.src(resources.module)
+		.pipe(plumber())
+		.pipe(through.obj(function(file, enc, next) {
+			let config = JSON.parse(file.contents.toString());
+			let {movian} = config;
+			let predefinedProps = {
+				file: resources.plugin
+			};
+			let configProps = Object
+				.keys(movian)
+				.filter((name) => movian[name] === null)
+				.reduce((result, name) => {
+					result[name] = predefinedProps[name] || config[name];
+					return result;
+				}, {});
 
-	stream.end(JSON.stringify(assign({}, movian, configProps)));
+			file.path = file.base + resources.config;
+			file.contents = new Buffer(JSON.stringify(assign({}, movian, configProps)));
 
-	return stream.pipe(gulp.dest(DEST));
+			this.push(file);
+			next();
+		}))
+		.pipe(gulp.dest(DEST));
+});
+
+gulp.task('watch', ['default'], () => {
+	gulp.watch(resources.source, ['plugin']);
+	gulp.watch(resources.assets, ['assets']);
+	gulp.watch(resources.module, ['config']);
 });
 
 gulp.task('default', ['plugin', 'assets', 'config']);
