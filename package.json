@@ -50,9 +50,13 @@
       "LoginRequired": "Login required",
       "LoginIncorrect": "Incorrect login or password! Try again",
       "LoginError": "Something went wrong on authorisation endpoint! Try again later",
-      "SectionWatching": "TV series i'm watching",
-      "SectionNew": "New episodes i'm watching",
-      "SectionAll": "All TV series"
+      "SectionUnwatched": "New episodes",
+      "SectionWatched": "Watched",
+      "SectionClosed": "Closed",
+      "SeasonTitle": "Season",
+      "EpisodeNewPrefix": "* ",
+      "ErrorUnknown": "Something went wrong",
+      "ErrorRetrieveVideoLink": "Unable to retrieve video link"
     }
   }
 }

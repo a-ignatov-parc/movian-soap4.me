@@ -15,7 +15,7 @@ const resources = {
 	config: 'plugin.json',
 	module: './package.json',
 	source: `${SOURCE}/**/*.js`,
-	assets: `${ASSETS}/**/*.{png,jpg,gif}`,
+	assets: `${ASSETS}/**/*.{png,jpg,gif,view}`,
 };
 
 gulp.task('plugin', () => {

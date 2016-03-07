@@ -1,4 +1,5 @@
 import Popup from 'native/popup';
+import Crypto from 'native/crypto';
 
 import Store from 'showtime/store';
 import {request} from 'showtime/http';
@@ -6,9 +7,9 @@ import Service from 'showtime/service';
 import Settings from 'showtime/settings';
 import Page, {Route} from 'showtime/page';
 
-let plugin = JSON.parse(Plugin.manifest);
+const plugin = JSON.parse(Plugin.manifest);
 
-let {
+const {
 	id,
 	icon,
 	i18n,
@@ -17,8 +18,8 @@ let {
 	synopsis,
 } = plugin;
 
-let iconPath = Plugin.path + icon;
-let storage = Storage(id);
+const iconPath = Plugin.path + icon;
+const storage = Storage(id);
 
 const USER_AGENT = 'xbmc for soap';
 
@@ -32,98 +33,162 @@ function headers() {
 
 const routes = {
 	START: prefix('start'),
-	SHOWS_NEW: prefix('browse', 'new'),
-	SHOWS_WATCHING: prefix('browse', 'watching'),
-	SHOWS_ALL: prefix('browse', 'all'),
+	SERIES: prefix('browse', '([0-9]+)'),
+	SEASON: prefix('browse', '([0-9]+)', 'season', '([0-9]+)'),
+	EPISODE: prefix('browse', '([0-9]+)', 'season', '([0-9]+)', 'video', '([0-9]+)'),
 	LOGIN: prefix('login'),
 	LOGOUT: prefix('logout'),
 };
 
-const url = {
+const urls = {
 	login: 'https://soap4.me/login/',
-	all: 'https://soap4.me/api/soap/',
-	watching: 'https://soap4.me/api/soap/my/',
+	series: {
+		all: 'https://soap4.me/api/soap/',
+		my: 'https://soap4.me/api/soap/my/',
+		video: 'https://soap4.me/callback/',
+		episodes: 'https://soap4.me/api/episodes/',
+	},
+	covers: {
+		serie: 'https://covers.soap4.me/soap/',
+		season: 'https://covers.soap4.me/season/',
+	}
 };
 
-const handlers = {
-	[routes.START](page) {
-		let token = getToken();
-
-		page.metadata.title = title;
-		page.metadata.logo = iconPath;
-		page.type = 'directory';
-
-		if (token) {
-			page.appendItem(prefix('browse', 'new'), 'directory', {
-				title: i18n.SectionNew
-			});
-			page.appendItem(prefix('browse', 'watching'), 'directory', {
-				title: i18n.SectionWatching
-			});
-			page.appendItem(prefix('browse', 'all'), 'directory', {
-				title: i18n.SectionAll
-			});
-		} else {
-			page.redirect(routes.LOGIN);
-		}
-	},
-
-	[routes.SHOWS_NEW](page) {
-		let token = getToken();
-
-		page.metadata.title = i18n.SectionNew;
-		page.metadata.logo = iconPath;
-		page.contents = 'items';
-		page.type = 'directory';
-		page.loading = true;
-
-		if (token) {
-			// let response = request(url.watching, {
-			// 	method: 'GET',
-			// 	noFollow: true,
-			// 	headers: headers(),
-			// });
-
-			// console.log(response);
-
-			// page.loading = false;
-		} else {
-			page.redirect(routes.LOGIN);
-		}
-	},
-
-	[routes.SHOWS_WATCHING](page) {
-		let token = getToken();
-
-		page.metadata.title = i18n.SectionWatching;
-		page.metadata.logo = iconPath;
-		page.model.contents = 'grid';
-		page.contents = 'items';
-		page.type = 'directory';
-		page.loading = true;
-
-		if (token) {
-			let response = request(url.watching, {
+const cache = {};
+const dataHandlers = {
+	series: {
+		load() {
+			let response = request(urls.series.my, {
 				method: 'GET',
 				noFollow: true,
 				headers: headers(),
 			});
+
 			let data = JSON.parse(response);
 
-			data.forEach(({
-				sid,
-				year,
-				title,
-				title_ru,
-				description,
-				imdb_rating,
-			}) => {
-				page.appendItem(prefix('browse', sid), 'video', {
-					year,
-					title,
-					description,
-					rating: parseFloat(imdb_rating),
-					icon: `https://covers.soap4.me/soap/big/${sid}.jpg`,
+			return cache.series = data.reduce((result, item) => {
+				result[item.sid] = item;
+				return result;
+			}, {raw: data});
+		}
+	},
+	seasons: {
+		get(sid) {
+			return cache[sid];
+		},
+
+		load(sid) {
+			let response = request(urls.series.episodes + sid, {
+				method: 'GET',
+				noFollow: true,
+				headers: headers(),
+			});
+
+			let data = JSON.parse(response);
+
+			return cache[sid] = data.reduce((result, item) => {
+				let seasonIndex = item.season - 1;
+				let episodeIndex = item.episode - 1;
+
+				if (!result.seasons[seasonIndex]) {
+					result.seasons[seasonIndex] = {
+						id: item.season_id,
+						season: item.season,
+						episodes: [],
+					};
+				}
+
+				if (!result.seasons[seasonIndex].episodes[episodeIndex]) {
+					result.seasons[seasonIndex].episodes[episodeIndex] = {};
+				}
+				result.seasons[seasonIndex].episodes[episodeIndex][item.quality] = item;
+				return result;
+			}, {seasons: [], raw: data});
+		}
+	},
+};
+
+function getData(name, ...args) {
+	let {get, load} = dataHandlers[name];
+	let cachedValue = typeof(get) === 'function' ? get(...args) : cache[name];
+
+	if (cachedValue) return cachedValue;
+	return load(...args);
+}
+
+const handlers = {
+	[routes.START](page) {
+		page.loading = true;
+
+		if (getToken()) {
+			page.metadata.title = title;
+			page.metadata.logo = iconPath;
+			page.model.contents = 'grid';
+			page.contents = 'items';
+			page.type = 'directory';
+
+			let {raw: data} = getData('series');
+
+			let ongoing = data.filter(({status, unwatched}) => status == 0 || unwatched > 0);
+			let unwatched = ongoing.filter(({unwatched}) => unwatched > 0);
+			let watched = ongoing.filter(({unwatched}) => !unwatched);
+			let closed = data.filter(({status, unwatched}) => status > 0 && !unwatched);
+
+			renderSectionGrid(page, unwatched, i18n.SectionUnwatched);
+			renderSectionGrid(page, watched, i18n.SectionWatched);
+			renderSectionGrid(page, closed, i18n.SectionClosed);
+
+			page.loading = false;
+		} else {
+			page.redirect(routes.LOGIN);
+		}
+	},
+
+	[routes.SERIES](page, sid) {
+		if (getToken()) {
+			page.loading = true;
+
+			let series = getData('series');
+			let serie = series[sid];
+
+			page.metadata.title = serie.title;
+			page.metadata.logo = `${urls.covers.serie}${sid}.jpg`;
+			page.model.contents = 'grid';
+			page.contents = 'items';
+			page.type = 'directory';
+
+			let {seasons} = getData('seasons', sid);
+
+			seasons.forEach(({id: seasonId}, i) => page.appendItem(prefix('browse', sid, 'season', seasonId), 'video', {
+				title: `${i18n.SeasonTitle} ${i + 1}`,
+				icon: `${urls.covers.season}big/${seasonId}.jpg`,
+			}))
+
+			page.loading = false;
+		} else {
+			page.redirect(routes.LOGIN);
+		}
+	},
+
+	[routes.SEASON](page, sid, seasonId) {
+		page.loading = true;
+
+		if (getToken()) {
+			let series = getData('series');
+			let {seasons} = getData('seasons', sid);
+			let [season] = seasons.filter(({id}) => id == seasonId);
+			let serie = series[sid];
+
+			page.metadata.title = `${serie.title} — ${i18n.SeasonTitle} ${season.season}`;
+			page.metadata.logo = `${urls.covers.season}${seasonId}.jpg`;
+			page.contents = 'items';
+			page.type = 'directory';
+
+			season.episodes.forEach(({'720p': episode}) => {
+				page.appendItem(prefix('browse', sid, 'season', seasonId, 'video', episode.eid), 'video', {
+					title: getEpisodeTitle(episode),
+					icon: `${urls.covers.season}big/${seasonId}.jpg`,
+					description: episode.spoiler,
 				});
 			});
 
@@ -133,24 +198,53 @@ const handlers = {
 		}
 	},
 
-	[routes.SHOWS_ALL](page) {
-		let token = getToken();
-
-		page.metadata.title = i18n.SectionAll;
-		page.metadata.logo = iconPath;
-		page.type = 'directory';
+	[routes.EPISODE](page, sid, seasonId, eid) {
 		page.loading = true;
 
+		let token = getToken();
+
 		if (token) {
-			let response = request(url.all, {
-				method: 'GET',
+			let {seasons} = getData('seasons', sid);
+			let [season] = seasons.filter(({id}) => id == seasonId);
+			let [episode] = season.episodes
+				.map(({'720p': episode}) => episode)
+				.filter((episode) => episode.eid == eid);
+
+			let hash = md5(token + eid + sid + episode.hash);
+
+			let response = request(urls.series.video, {
+				method: 'POST',
 				noFollow: true,
 				headers: headers(),
+				postdata: {
+					eid,
+					hash,
+					token,
+					do: 'load',
+					what: 'player',
+				},
 			});
 
-			console.log(response);
+			if (response.statuscode !== 200) {
+				return page.error(i18n.ErrorUnknown);
+			}
 
-			// page.loading = false;
+			let {ok, server, subs, comment} = JSON.parse(response);
+
+			if (!ok) {
+				return page.error(i18n.ErrorRetrieveVideoLink);
+			}
+
+			let url = `https://${server}.soap4.me/${token}/${eid}/${hash}/`;
+			let video = {
+				title: getEpisodeTitle(episode),
+				canonicalUrl: prefix('browse', sid, 'season', seasonId, 'video', eid),
+				sources: [{url}],
+			};
+
+			page.loading = false;
+			page.source = `videoparams:${JSON.stringify(video)}`;
+			page.type = 'video';
 		} else {
 			page.redirect(routes.LOGIN);
 		}
@@ -167,7 +261,7 @@ const handlers = {
 			return page.redirect(routes.LOGIN2);
 		}
 
-		let response = request(url.login, {
+		let response = request(urls.login, {
 			method: 'POST',
 			noFollow: true,
 			headers: headers(),
@@ -191,7 +285,8 @@ const handlers = {
 	},
 
 	[routes.LOGOUT](page) {
-		console.log('Logout!');
+		deleteToken();
+		page.redirect(routes.START);
 	},
 };
 
@@ -201,14 +296,27 @@ Settings.globalSettings(id, title, iconPath, synopsis);
 Settings.createDivider('General');
 Settings.createAction(routes.LOGOUT, 'Logout', handlers[routes.LOGOUT]);
 
-new Route(routes.START, handlers[routes.START]);
+[
+	routes.START,
+	routes.SERIES,
+	routes.SEASON,
+	routes.EPISODE,
+	routes.LOGIN,
+	routes.LOGOUT,
+].forEach((route) => new Route(route, handlers[route]));
 
-new Route(routes.SHOWS_WATCHING, handlers[routes.SHOWS_WATCHING]);
-new Route(routes.SHOWS_NEW, handlers[routes.SHOWS_NEW]);
-new Route(routes.SHOWS_ALL, handlers[routes.SHOWS_ALL]);
-
-new Route(routes.LOGIN, handlers[routes.LOGIN]);
-new Route(routes.LOGOUT, handlers[routes.LOGOUT]);
+function renderSectionGrid(page, data, title = '') {
+	return {
+		title: page.appendItem('', 'separator', {title}),
+		items: data.map(({
+			sid,
+			title,
+		}) => page.appendItem(prefix('browse', sid), 'video', {
+			title,
+			icon: `${urls.covers.serie}big/${sid}.jpg`,
+		}))
+	};
+}
 
 function prefix(...args) {
 	return `${plugin.prefix}:${args.join(':')}`;
@@ -231,9 +339,40 @@ function getToken() {
 		return token;
 	}
 
+	deleteToken();
+	return null;
+}
+
+function deleteToken() {
 	storage.remove('token');
 	storage.remove('token-expires');
-	return null;
+}
+
+function dump(data, title) {
+	console.log(`${title != null ? `${title}: ` : ''}${JSON.stringify(data)}`);
+}
+
+function prettifyNumber(num) {
+	return `00${num || ''}`.slice(-2);
+}
+
+function getEpisodeTitle(episode) {
+	let index = `S${prettifyNumber(episode.season)}E${prettifyNumber(episode.episode)}`;
+	let sections = [index, episode.translate, episode.title_en];
+	let prefix = '';
+
+	if (!episode.watched) {
+		prefix = i18n.EpisodeNewPrefix;
+	}
+
+	return prefix + sections.join(' | ');
+}
+
+function md5(str = '') {
+	let hash = Crypto.hashCreate('md5');
+	Crypto.hashUpdate(hash, str);
+	let digest = Crypto.hashFinalize(hash);
+	return Duktape.enc('hex', digest);
 }
 
 function Storage(id) {
@@ -257,8 +396,4 @@ function Storage(id) {
 			this.set(name, null);
 		}
 	};
-}
-
-function dump(data) {
-	console.log(JSON.stringify(data));
 }
