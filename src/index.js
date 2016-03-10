@@ -21,6 +21,11 @@ const {
 const iconPath = Plugin.path + icon;
 const storage = Storage(id);
 
+const settings = {
+	markAsWatched: true,
+	showNotWatchingSeries: true,
+};
+
 const USER_AGENT = 'xbmc for soap';
 
 function headers() {
@@ -46,6 +51,8 @@ const urls = {
 		all: 'https://soap4.me/api/soap/',
 		my: 'https://soap4.me/api/soap/my/',
 		video: 'https://soap4.me/callback/',
+		watch: 'https://soap4.me/api/soap/watch/',
+		unwatch: 'https://soap4.me/api/soap/unwatch/',
 		episodes: 'https://soap4.me/api/episodes/',
 	},
 	covers: {
@@ -58,7 +65,7 @@ const cache = {};
 const dataHandlers = {
 	series: {
 		load() {
-			let response = request(urls.series.my, {
+			let response = request(urls.series.all, {
 				method: 'GET',
 				noFollow: true,
 				headers: headers(),
@@ -129,14 +136,21 @@ const handlers = {
 
 			let {raw: data} = getData('series');
 
-			let ongoing = data.filter(({status, unwatched}) => status == 0 || unwatched > 0);
+			let watching = data.filter(({watching}) => watching > 0);
+			let others = data.filter(({watching}) => watching < 1);
+
+			let ongoing = watching.filter(({status, unwatched}) => status == 0 || unwatched > 0);
 			let unwatched = ongoing.filter(({unwatched}) => unwatched > 0);
 			let watched = ongoing.filter(({unwatched}) => !unwatched);
-			let closed = data.filter(({status, unwatched}) => status > 0 && !unwatched);
+			let closed = watching.filter(({status, unwatched}) => status > 0 && !unwatched);
 
 			renderSectionGrid(page, unwatched, i18n.SectionUnwatched);
 			renderSectionGrid(page, watched, i18n.SectionWatched);
 			renderSectionGrid(page, closed, i18n.SectionClosed);
+
+			if (settings.showNotWatchingSeries) {
+				renderSectionGrid(page, others, i18n.SectionOthers);
+			}
 
 			page.loading = false;
 		} else {
@@ -204,6 +218,9 @@ const handlers = {
 		let token = getToken();
 
 		if (token) {
+			let series = getData('series');
+			let serie = series[sid];
+
 			let {seasons} = getData('seasons', sid);
 			let [season] = seasons.filter(({id}) => id == seasonId);
 			let [episode] = season.episodes
@@ -233,6 +250,42 @@ const handlers = {
 
 			if (!ok) {
 				return page.error(i18n.ErrorRetrieveVideoLink);
+			}
+
+			if (serie.watching < 1) {
+				let response = request(urls.series.watch + sid, {
+					method: 'POST',
+					noFollow: true,
+					headers: headers(),
+					postdata: {token},
+				});
+
+				let {ok} = JSON.parse(response);
+
+				// Mark cached tv serie as watching.
+				if (ok) {
+					serie.watching = 1;
+				}
+			}
+
+			if (settings.markAsWatched) {
+				let response = request(urls.series.video, {
+					method: 'POST',
+					noFollow: true,
+					headers: headers(),
+					postdata: {
+						eid,
+						token,
+						what: 'mark_watched',
+					},
+				});
+
+				let {ok} = JSON.parse(response);
+
+				// Mark episode watched in cached results.
+				if (ok) {
+					episode.watched = 1;
+				}
 			}
 
 			let url = `https://${server}.soap4.me/${token}/${eid}/${hash}/`;
@@ -286,15 +339,25 @@ const handlers = {
 
 	[routes.LOGOUT](page) {
 		deleteToken();
-		page.redirect(routes.START);
+		notify(i18n.LogoutMessage);
+		page && page.redirect(routes.START);
 	},
 };
 
 const service = Service.create(title, routes.START, category, true, iconPath);
 
 Settings.globalSettings(id, title, iconPath, synopsis);
-Settings.createDivider('General');
-Settings.createAction(routes.LOGOUT, 'Logout', handlers[routes.LOGOUT]);
+
+Settings.createDivider(i18n.SettingsGeneralSection);
+[
+	'markAsWatched', 
+	'showNotWatchingSeries',
+].forEach((name) => Settings.createBool(name, i18n[`Settings${capitalize(name)}`], settings[name], (value) => {
+	settings[name] = value;
+}));
+
+Settings.createDivider(i18n.SettingsAuthSection);
+Settings.createAction(routes.LOGOUT, i18n.SettingsLogout, handlers[routes.LOGOUT]);
 
 [
 	routes.START,
@@ -373,6 +436,10 @@ function md5(str = '') {
 	Crypto.hashUpdate(hash, str);
 	let digest = Crypto.hashFinalize(hash);
 	return Duktape.enc('hex', digest);
+}
+
+function capitalize(str) {
+	return str.charAt(0).toUpperCase() + str.substr(1);
 }
 
 function Storage(id) {
