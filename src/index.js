@@ -198,13 +198,15 @@ const handlers = {
 			page.contents = 'items';
 			page.type = 'directory';
 
-			season.episodes.forEach(({'720p': episode}) => {
-				page.appendItem(prefix('browse', sid, 'season', seasonId, 'video', episode.eid), 'video', {
-					title: getEpisodeTitle(episode),
-					icon: `${urls.covers.season}big/${seasonId}.jpg`,
-					description: episode.spoiler,
+			season.episodes
+				.map(getAvailableEpisodesByQuality('720p'))
+				.forEach((episode) => {
+					page.appendItem(prefix('browse', sid, 'season', seasonId, 'video', episode.eid), 'video', {
+						title: getEpisodeTitle(episode),
+						icon: `${urls.covers.season}big/${seasonId}.jpg`,
+						description: episode.spoiler,
+					});
 				});
-			});
 
 			page.loading = false;
 		} else {
@@ -224,7 +226,7 @@ const handlers = {
 			let {seasons} = getData('seasons', sid);
 			let [season] = seasons.filter(({id}) => id == seasonId);
 			let [episode] = season.episodes
-				.map(({'720p': episode}) => episode)
+				.map(getAvailableEpisodesByQuality('720p'))
 				.filter((episode) => episode.eid == eid);
 
 			let hash = md5(token + eid + sid + episode.hash);
@@ -367,6 +369,23 @@ Settings.createAction(routes.LOGOUT, i18n.SettingsLogout, handlers[routes.LOGOUT
 	routes.LOGIN,
 	routes.LOGOUT,
 ].forEach((route) => new Route(route, handlers[route]));
+
+function getAvailableEpisodesByQuality(preferableQuality = '') {
+	return (qualities) => {
+		let quality = Object
+			.keys(qualities)
+			.sort((a, b) => {
+				if (a === preferableQuality) {
+					return -1;
+				} else if (b === preferableQuality) {
+					return 1;
+				}
+				return 0;
+			})[0];
+
+		return qualities[quality];
+	}
+}
 
 function renderSectionGrid(page, data, title = '') {
 	return {
