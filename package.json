@@ -32,7 +32,7 @@
     "through2": "^2.0.1"
   },
   "movian": {
-    "id": "test",
+    "id": "soap4.me",
     "apiversion": 2,
     "type": "ecmascript",
     "showtimeVersion": "4.8",
