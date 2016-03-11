@@ -5,4 +5,5 @@
 # Build files
 npm-debug.log
 node_modules/
+releases/
 out/
