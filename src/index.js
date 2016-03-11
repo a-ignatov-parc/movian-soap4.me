@@ -258,7 +258,7 @@ const handlers = {
 				},
 			});
 
-			if (response.statuscode !== 200) {
+			if (response.statuscode && response.statuscode !== 200) {
 				return page.error(i18n.ErrorUnknown);
 			}
 
@@ -337,7 +337,7 @@ const handlers = {
 			postdata: {login, password},
 		});
 
-		if (response.statuscode !== 200) {
+		if (response.statuscode && response.statuscode !== 200) {
 			notify(i18n.LoginError);
 			return page.redirect(routes.LOGIN);
 		}
