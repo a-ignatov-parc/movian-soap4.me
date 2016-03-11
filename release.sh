@@ -1,8 +1,13 @@
 #!/usr/bin/env bash
 
-rm -rf ./out
 npm install
 npm version ${1:-patch}
+
+rm -rf ./out
 ./node_modules/.bin/gulp --production
-mkdir -p ./releases
-zip -r -X -j ./releases/plugin.zip ./out
+
+PACKAGE_VERSION=$(node -p -e "require('./package.json').version")
+RELEASE_PATH="./releases/$PACKAGE_VERSION"
+
+mkdir -p $RELEASE_PATH
+zip -r -X -j "$RELEASE_PATH/plugin.zip" ./out
