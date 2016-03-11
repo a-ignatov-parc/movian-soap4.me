@@ -1,6 +1,6 @@
 {
   "name": "movian-soap4.me",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "description": "Movian media server plugin for soap4.me video service",
   "main": "./src/index.js",
   "scripts": {
