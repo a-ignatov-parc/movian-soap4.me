@@ -5,7 +5,7 @@ import Store from 'showtime/store';
 import {request} from 'showtime/http';
 import Service from 'showtime/service';
 import Settings from 'showtime/settings';
-import Page, {Route} from 'showtime/page';
+import {Route, Searcher} from 'showtime/page';
 
 const plugin = JSON.parse(Plugin.manifest);
 
@@ -27,6 +27,7 @@ const settings = {
 };
 
 const USER_AGENT = 'xbmc for soap';
+const DEFAULT_VIDEO_QUALITY = '720p';
 
 function headers() {
 	return {
@@ -38,6 +39,7 @@ function headers() {
 
 const routes = {
 	START: prefix('start'),
+	SEARCH: prefix('search'),
 	SERIES: prefix('browse', '([0-9]+)'),
 	SEASON: prefix('browse', '([0-9]+)', 'season', '([0-9]+)'),
 	EPISODE: prefix('browse', '([0-9]+)', 'season', '([0-9]+)', 'video', '([0-9]+)'),
@@ -47,6 +49,7 @@ const routes = {
 
 const urls = {
 	login: 'https://soap4.me/login/',
+	search: 'https://soap4.me/api/search/?q=',
 	series: {
 		all: 'https://soap4.me/api/soap/',
 		my: 'https://soap4.me/api/soap/my/',
@@ -158,6 +161,23 @@ const handlers = {
 		}
 	},
 
+	[routes.SEARCH](page, query) {
+		page.contents = 'items';
+		page.type = 'directory';
+
+		let response = request(urls.search + query, {
+			method: 'GET',
+			noFollow: true,
+			headers: headers(),
+		});
+
+		let {series, episodes} = JSON.parse(response);
+
+		page.entries = series.length + episodes.length;
+		series.length && renderSearchSection(page, series);
+		episodes.length && renderSearchSection(page, episodes);
+	},
+
 	[routes.SERIES](page, sid) {
 		if (getToken()) {
 			page.loading = true;
@@ -199,14 +219,8 @@ const handlers = {
 			page.type = 'directory';
 
 			season.episodes
-				.map(getAvailableEpisodesByQuality('720p'))
-				.forEach((episode) => {
-					page.appendItem(prefix('browse', sid, 'season', seasonId, 'video', episode.eid), 'video', {
-						title: getEpisodeTitle(episode),
-						icon: `${urls.covers.season}big/${seasonId}.jpg`,
-						description: episode.spoiler,
-					});
-				});
+				.map(getAvailableEpisodesByQuality(DEFAULT_VIDEO_QUALITY))
+				.forEach(renderEpisode.bind(this, page));
 
 			page.loading = false;
 		} else {
@@ -226,7 +240,7 @@ const handlers = {
 			let {seasons} = getData('seasons', sid);
 			let [season] = seasons.filter(({id}) => id == seasonId);
 			let [episode] = season.episodes
-				.map(getAvailableEpisodesByQuality('720p'))
+				.map(getAvailableEpisodesByQuality(DEFAULT_VIDEO_QUALITY))
 				.filter((episode) => episode.eid == eid);
 
 			let hash = md5(token + eid + sid + episode.hash);
@@ -347,6 +361,7 @@ const handlers = {
 };
 
 const service = Service.create(title, routes.START, category, true, iconPath);
+const search = new Searcher(title, iconPath, handlers[routes.SEARCH]);
 
 Settings.globalSettings(id, title, iconPath, synopsis);
 
@@ -390,14 +405,40 @@ function getAvailableEpisodesByQuality(preferableQuality = '') {
 function renderSectionGrid(page, data, title = '') {
 	return {
 		title: page.appendItem('', 'separator', {title}),
-		items: data.map(({
-			sid,
-			title,
-		}) => page.appendItem(prefix('browse', sid), 'video', {
-			title,
-			icon: `${urls.covers.serie}big/${sid}.jpg`,
-		}))
+		items: data.map(renderSerie.bind(this, page)),
 	};
+}
+
+function renderSearchSection(page, data) {
+	return {
+		items: data.map((item) => {
+			if (item.episode) {
+				let {seasons} = getData('seasons', item.sid);
+				let season = seasons[item.season - 1];
+				let episode = season.episodes.map(getAvailableEpisodesByQuality(DEFAULT_VIDEO_QUALITY))[item.episode - 1];
+				return renderEpisode(page, episode);
+			}
+			return renderSerie(page, item);
+		})
+	};
+}
+
+function renderSerie(page, {sid, title, description}) {
+	return page.appendItem(prefix('browse', sid), 'video', {
+		title,
+		description,
+		icon: `${urls.covers.serie}big/${sid}.jpg`,
+	});
+}
+
+function renderEpisode(page, item) {
+	let {sid, season_id: seasonId} = item;
+
+	return page.appendItem(prefix('browse', sid, 'season', seasonId, 'video', item.eid), 'video', {
+		title: getEpisodeTitle(item),
+		icon: `${urls.covers.season}big/${seasonId}.jpg`,
+		description: item.spoiler,
+	});
 }
 
 function prefix(...args) {
