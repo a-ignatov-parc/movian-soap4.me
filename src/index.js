@@ -193,10 +193,18 @@ const handlers = {
 
 			let {seasons} = getData('seasons', sid);
 
-			seasons.forEach(({id: seasonId}, i) => page.appendItem(prefix('browse', sid, 'season', seasonId), 'video', {
-				title: `${i18n.SeasonTitle} ${i + 1}`,
-				icon: `${urls.covers.season}big/${seasonId}.jpg`,
-			}))
+			seasons.forEach(({id: seasonId, episodes}, i) => {
+				let unwatchedCount = episodes
+					.map(getAvailableEpisodesByQuality(DEFAULT_VIDEO_QUALITY))
+					.filter(({watched}) => !watched)
+					.length;
+				let postfix = unwatchedCount ? ` (${unwatchedCount})` : '';
+
+				page.appendItem(prefix('browse', sid, 'season', seasonId), 'video', {
+					title: `${i18n.SeasonTitle} ${i + 1}${postfix}`,
+					icon: `${urls.covers.season}big/${seasonId}.jpg`,
+				});
+			});
 
 			page.loading = false;
 		} else {
@@ -423,10 +431,12 @@ function renderSearchSection(page, data) {
 	};
 }
 
-function renderSerie(page, {sid, title, description}) {
+function renderSerie(page, {sid, title, description, unwatched}) {
+	let postfix = unwatched ? ` (${unwatched})` : '';
+
 	return page.appendItem(prefix('browse', sid), 'video', {
-		title,
 		description,
+		title: title + postfix,
 		icon: `${urls.covers.serie}big/${sid}.jpg`,
 	});
 }
