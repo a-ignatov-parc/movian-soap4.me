@@ -52,6 +52,18 @@
       "SettingsGeneralSection": "General",
       "SettingsMarkAsWatched": "Mark episodes as watched",
       "SettingsShowNotWatchingSeries": "Show not watching series on main screen",
+      "SettingsVideoSection": "Video",
+      "SettingsTraslation": "Translation",
+      "SettingsTraslationOptions": {
+        "any": "Any",
+        "russian": "Only Russian",
+        "subtitles": "Only Subtitles"
+      },
+      "SettingsVideoQuality": "Quality",
+      "SettingsVideoQualityOptions": {
+        "720p": "HD",
+        "SD": "SD"
+      },
       "SettingsAuthSection": "Authorization",
       "SettingsLogout": "Logout",
       "LogoutMessage": "You have successfully logged out",
@@ -62,6 +74,8 @@
       "SectionWatched": "Watched",
       "SectionClosed": "Closed",
       "SectionOthers": "Not watching",
+      "SectionTranslation": "Translation",
+      "SectionSubtitles": "Subtitles",
       "SeasonTitle": "Season",
       "EpisodeNewPrefix": "* ",
       "ErrorUnknown": "Something went wrong",

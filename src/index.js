@@ -21,13 +21,27 @@ const {
 const iconPath = Plugin.path + icon;
 const storage = Storage(id);
 
+const params = {
+	traslation: {
+		ANY: 'any',
+		RUSSIAN: 'russian',
+		SUBTITLES: 'subtitles',
+	},
+
+	videoQuality: {
+		HD: '720p',
+		SD: 'SD',
+	}
+}
+
 const settings = {
 	markAsWatched: true,
 	showNotWatchingSeries: true,
+	traslation: params.traslation.ANY,
+	videoQuality: params.videoQuality.HD,
 };
 
 const USER_AGENT = 'xbmc for soap';
-const DEFAULT_VIDEO_QUALITY = '720p';
 
 function headers() {
 	return {
@@ -105,13 +119,20 @@ const dataHandlers = {
 						id: item.season_id,
 						season: item.season,
 						episodes: [],
+						subtitles: [],
 					};
 				}
 
-				if (!result.seasons[seasonIndex].episodes[episodeIndex]) {
-					result.seasons[seasonIndex].episodes[episodeIndex] = {};
+				let episodeCollection = result.seasons[seasonIndex].episodes;
+
+				if (~item.translate.toLowerCase().indexOf('субтитры')) {
+					episodeCollection = result.seasons[seasonIndex].subtitles;
 				}
-				result.seasons[seasonIndex].episodes[episodeIndex][item.quality] = item;
+
+				if (!episodeCollection[episodeIndex]) {
+					episodeCollection[episodeIndex] = {};
+				}
+				episodeCollection[episodeIndex][item.quality] = item;
 				return result;
 			}, {seasons: [], raw: data});
 		}
@@ -195,7 +216,7 @@ const handlers = {
 
 			seasons.forEach(({id: seasonId, episodes}, i) => {
 				let unwatchedCount = episodes
-					.map(getAvailableEpisodesByQuality(DEFAULT_VIDEO_QUALITY))
+					.map(getAvailableEpisodesByQuality(settings.videoQuality))
 					.filter(({watched}) => !watched)
 					.length;
 				let postfix = unwatchedCount ? ` (${unwatchedCount})` : '';
@@ -226,9 +247,19 @@ const handlers = {
 			page.contents = 'items';
 			page.type = 'directory';
 
-			season.episodes
-				.map(getAvailableEpisodesByQuality(DEFAULT_VIDEO_QUALITY))
-				.forEach(renderEpisode.bind(this, page));
+			if (settings.traslation !== params.traslation.SUBTITLES) {
+				page.appendItem('', 'separator', {title: i18n.SectionTranslation});
+				season.episodes
+					.map(getAvailableEpisodesByQuality(settings.videoQuality))
+					.forEach(renderEpisode.bind(this, page));
+			}
+
+			if (settings.traslation !== params.traslation.RUSSIAN && season.subtitles.length) {
+				page.appendItem('', 'separator', {title: i18n.SectionSubtitles});
+				season.subtitles
+					.map(getAvailableEpisodesByQuality(settings.videoQuality))
+					.forEach(renderEpisode.bind(this, page));
+			}
 
 			page.loading = false;
 		} else {
@@ -248,7 +279,8 @@ const handlers = {
 			let {seasons} = getData('seasons', sid);
 			let [season] = seasons.filter(({id}) => id == seasonId);
 			let [episode] = season.episodes
-				.map(getAvailableEpisodesByQuality(DEFAULT_VIDEO_QUALITY))
+				.concat(season.subtitles)
+				.map(getAvailableEpisodesByQuality(settings.videoQuality))
 				.filter((episode) => episode.eid == eid);
 
 			let hash = md5(token + eid + sid + episode.hash);
@@ -308,7 +340,17 @@ const handlers = {
 
 				// Mark episode watched in cached results.
 				if (ok) {
-					episode.watched = 1;
+					season.episodes
+						.concat(season.subtitles)
+						.filter((item, i) => `${i + 1}` == episode.episode)
+						.forEach((item) => {
+							Object
+								.keys(item)
+								.map((key) => item[key])
+								.forEach((episode) => {
+									episode.watched = 1;
+								});
+						});
 				}
 			}
 
@@ -374,12 +416,10 @@ const search = new Searcher(title, iconPath, handlers[routes.SEARCH]);
 Settings.globalSettings(id, title, iconPath, synopsis);
 
 Settings.createDivider(i18n.SettingsGeneralSection);
-[
-	'markAsWatched', 
-	'showNotWatchingSeries',
-].forEach((name) => Settings.createBool(name, i18n[`Settings${capitalize(name)}`], settings[name], (value) => {
-	settings[name] = value;
-}));
+['markAsWatched', 'showNotWatchingSeries'].forEach(renderSettings);
+
+Settings.createDivider(i18n.SettingsVideoSection);
+['traslation', 'videoQuality'].forEach(renderSettings);
 
 Settings.createDivider(i18n.SettingsAuthSection);
 Settings.createAction(routes.LOGOUT, i18n.SettingsLogout, handlers[routes.LOGOUT]);
@@ -423,7 +463,7 @@ function renderSearchSection(page, data) {
 			if (item.episode) {
 				let {seasons} = getData('seasons', item.sid);
 				let season = seasons[item.season - 1];
-				let episode = season.episodes.map(getAvailableEpisodesByQuality(DEFAULT_VIDEO_QUALITY))[item.episode - 1];
+				let episode = season.episodes.map(getAvailableEpisodesByQuality(settings.videoQuality))[item.episode - 1];
 				return renderEpisode(page, episode);
 			}
 			return renderSerie(page, item);
@@ -449,6 +489,30 @@ function renderEpisode(page, item) {
 		icon: `${urls.covers.season}big/${seasonId}.jpg`,
 		description: item.spoiler,
 	});
+}
+
+function renderSettings(name) {
+	if (settings[name] == null) {
+		throw new Error(`Unknown settngs property "${name}"`);
+	}
+
+	if (typeof(settings[name]) === 'boolean') {
+		Settings.createBool(name, i18n[`Settings${capitalize(name)}`], settings[name], (value) => {
+			settings[name] = value;
+		});
+	} else {
+		let values = Object
+			.keys(params[name])
+			.map((key) => [
+				params[name][key],
+				i18n[`Settings${capitalize(name)}Options`][params[name][key]],
+				params[name][key] === settings[name],
+			]);
+
+		Settings.createMultiOpt(name, i18n[`Settings${capitalize(name)}`], values, (value) => {
+			settings[name] = value;
+		});
+	}
 }
 
 function prefix(...args) {
