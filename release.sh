@@ -11,3 +11,6 @@ RELEASE_PATH="./releases/$PACKAGE_VERSION"
 
 mkdir -p $RELEASE_PATH
 zip -r -X -j "$RELEASE_PATH/plugin.zip" ./out
+
+git push origin master
+git push --tags
